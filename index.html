@@ -10,8 +10,7 @@
             background-image: url('https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=1600');
             background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #ffffff;
-            padding: 15px;
+            display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #ffffff; padding: 15px;
         }
         #game-container {
             background: rgba(20, 15, 12, 0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -25,16 +24,13 @@
             background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px;
             padding: 15px; min-height: 100px; margin-bottom: 20px; text-align: left; font-size: 14px; line-height: 1.6;
         }
-        
-        /* スマホで押しやすいタップ領域の広いボタン */
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .btn-grid button {
             background: rgba(35, 45, 60, 0.85); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25);
             padding: 16px 8px; font-size: 14px; border-radius: 10px; cursor: pointer; transition: all 0.2s ease;
-            -webkit-tap-highlight-color: transparent; /* タップ時の青い枠線を消す */
+            -webkit-tap-highlight-color: transparent;
         }
         .btn-grid button:active { background: rgba(55, 70, 95, 0.95); transform: scale(0.98); }
-        
         .clear-text { color: #72f293; font-weight: bold; font-size: 16px; text-align: center; margin-top: 10px; }
         #game-over-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -42,6 +38,9 @@
             justify-content: center; align-items: center; color: #ff4d4d; text-align: center; padding: 20px;
         }
     </style>
+    <!-- Firebase SDKの読み込み -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -70,9 +69,13 @@
 </div>
 
 <script>
-    const channel = new BroadcastChannel('escape_game_channel');
+    // Firebaseの初期化（※URLをご自身のものに差し替えてください）
+    const firebaseConfig = {
+        databaseURL: "https://escape-game-test-1476a-default-rtdb.asia-southeast1.firebasedatabase.app" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
 
-    // タブ/スマホごとに固有のプレイヤーIDを生成
     const playerId = 'P-' + Math.floor(1000 + Math.random() * 9000);
     document.getElementById('display-id').textContent = playerId;
 
@@ -81,15 +84,24 @@
     let isCleared = false;
     let isGameOver = false;
     let timeLeft = 300;
+    let logs = [];
 
     function sendStatusToAdmin(lastActionLog) {
-        channel.postMessage({
+        if (lastActionLog && lastActionLog !== "（時間経過）") {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            logs.push(`[${timeStr}] ${lastActionLog}`);
+        }
+
+        // Firebaseに状態をリアルタイム送信
+        database.ref('players/' + playerId).set({
             playerId: playerId,
             timeLeft: timeLeft,
             hasKey: hasKey,
             hasNote: hasNote,
             status: isCleared ? 'CLEARED' : (isGameOver ? 'GAMEOVER' : 'PLAYING'),
-            lastLog: lastActionLog
+            logs: logs,
+            lastUpdated: Date.now()
         });
     }
 
