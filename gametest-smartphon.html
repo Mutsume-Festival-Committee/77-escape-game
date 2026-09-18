@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>脱出ゲーム：開かずの部屋</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-image: url('https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=1600');
+            background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #ffffff;
+            padding: 15px;
+        }
+        #game-container {
+            background: rgba(20, 15, 12, 0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            width: 100%; max-width: 500px; padding: 20px; border-radius: 16px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.2); text-align: center;
+        }
+        h1 { font-size: 20px; margin-bottom: 10px; color: #f0e6d2; }
+        #player-id-tag { font-size: 12px; color: #bbb; margin-bottom: 8px; }
+        #timer-box { font-size: 18px; font-weight: bold; color: #ff6b6b; margin-bottom: 15px; }
+        #message-box {
+            background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px;
+            padding: 15px; min-height: 100px; margin-bottom: 20px; text-align: left; font-size: 14px; line-height: 1.6;
+        }
+        
+        /* スマホで押しやすいタップ領域の広いボタン */
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-grid button {
+            background: rgba(35, 45, 60, 0.85); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25);
+            padding: 16px 8px; font-size: 14px; border-radius: 10px; cursor: pointer; transition: all 0.2s ease;
+            -webkit-tap-highlight-color: transparent; /* タップ時の青い枠線を消す */
+        }
+        .btn-grid button:active { background: rgba(55, 70, 95, 0.95); transform: scale(0.98); }
+        
+        .clear-text { color: #72f293; font-weight: bold; font-size: 16px; text-align: center; margin-top: 10px; }
+        #game-over-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.95); z-index: 999; flex-direction: column;
+            justify-content: center; align-items: center; color: #ff4d4d; text-align: center; padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h1>脱出ゲーム：開かずの部屋</h1>
+    <div id="player-id-tag">ID: <span id="display-id">--</span></div>
+    <div id="timer-box">⏱️ 残り時間: <span id="timer">05:00</span></div>
+    
+    <div id="message-box">
+        気がつくと、見覚えのないシックな部屋に閉じ込められていた…<br>
+        5分以内にここから脱出する方法を探そう！
+    </div>
+
+    <div class="btn-grid" id="action-buttons">
+        <button onclick="inspect('door')">🚪 ドアを調べる</button>
+        <button onclick="inspect('desk')">🪑 机を調べる</button>
+        <button onclick="inspect('safe')">🧰 金庫を調べる</button>
+        <button onclick="inspect('poster')">🖼️ ポスターを調べる</button>
+    </div>
+</div>
+
+<div id="game-over-overlay">
+    <h2>GAME OVER</h2>
+    <p style="margin: 15px 0;">制限時間が終了した…部屋の空気がなくなり意識が遠のく…</p>
+    <button onclick="location.reload()" style="padding: 12px 24px; font-size: 16px; border-radius: 8px;">🔄 もう一度挑戦する</button>
+</div>
+
+<script>
+    const channel = new BroadcastChannel('escape_game_channel');
+
+    // タブ/スマホごとに固有のプレイヤーIDを生成
+    const playerId = 'P-' + Math.floor(1000 + Math.random() * 9000);
+    document.getElementById('display-id').textContent = playerId;
+
+    let hasKey = false;
+    let hasNote = false;
+    let isCleared = false;
+    let isGameOver = false;
+    let timeLeft = 300;
+
+    function sendStatusToAdmin(lastActionLog) {
+        channel.postMessage({
+            playerId: playerId,
+            timeLeft: timeLeft,
+            hasKey: hasKey,
+            hasNote: hasNote,
+            status: isCleared ? 'CLEARED' : (isGameOver ? 'GAMEOVER' : 'PLAYING'),
+            lastLog: lastActionLog
+        });
+    }
+
+    const timerElement = document.getElementById('timer');
+
+    const timerInterval = setInterval(() => {
+        if (isCleared || isGameOver) {
+            clearInterval(timerInterval);
+            return;
+        }
+
+        timeLeft--;
+        let minutes = Math.floor(timeLeft / 60);
+        let seconds = timeLeft % 60;
+        timerElement.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+        sendStatusToAdmin("（時間経過）");
+
+        if (timeLeft <= 0) {
+            isGameOver = true;
+            clearInterval(timerInterval);
+            document.getElementById('game-over-overlay').style.display = 'flex';
+            sendStatusToAdmin("⏰ 制限時間切れ：ゲームオーバー");
+        }
+    }, 1000);
+
+    function showMessage(text) {
+        document.getElementById('message-box').innerHTML = text;
+    }
+
+    function toHalfWidthNum(str) {
+        return str.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+    }
+
+    function inspect(place) {
+        if (isGameOver || isCleared) return;
+
+        if (place === 'door') {
+            let inputCode = prompt("4桁の暗証番号を入力してください：");
+            if (inputCode !== null && inputCode.trim() !== "") {
+                let normalizedCode = toHalfWidthNum(inputCode.trim());
+                if (normalizedCode === "7391") {
+                    isCleared = true;
+                    showMessage("「ピピッ！ ガチャリ！」<br>暗証番号が合致し、重厚なドアが開いた！<br><div class='clear-text'>🎉 脱出成功！おめでとうございます！ 🎉</div>");
+                    document.getElementById('action-buttons').innerHTML = "<button onclick='location.reload()' style='grid-column: span 2;'>🔄 もう一度遊ぶ</button>";
+                    sendStatusToAdmin("🔑 ドア開錠！脱出成功！");
+                } else {
+                    showMessage("「ブブー！」 暗証番号が違うようだ…");
+                    sendStatusToAdmin(`🚪 ドアを調べた（入力失敗: ${inputCode}）`);
+                }
+            } else {
+                showMessage("大きな木のドアだ。4桁の電子ロックがかかっている。");
+                sendStatusToAdmin("🚪 ドアを調べた");
+            }
+        } 
+        else if (place === 'desk') {
+            if (!hasKey) {
+                hasKey = true;
+                showMessage("重厚な木製の机の引き出しを開けると、小さな【銀の鍵】が入っていた！<br>🔑 鍵を手に入れた。");
+                sendStatusToAdmin("🪑 机を調べた（銀の鍵を入手）");
+            } else {
+                showMessage("机の引き出しの中は、もう空っぽだ。");
+                sendStatusToAdmin("🪑 机を調べた（空）");
+            }
+        } 
+        else if (place === 'safe') {
+            if (hasNote) {
+                showMessage("金庫はすでに開いている。中は空だ。");
+                sendStatusToAdmin("🧰 金庫を調べた（既開）");
+            } else if (hasKey) {
+                hasNote = true;
+                showMessage("手に入れた【銀の鍵】を差し込むと「ガチャリ」と金庫が開いた！<br>中からメモが出てきた。<br>📜 メモ『暗証番号：7391』");
+                sendStatusToAdmin("🧰 金庫を開けた（メモを入手）");
+            } else {
+                showMessage("部屋の隅に小さな金属製の金庫がある。鍵穴がついていて開かない…");
+                sendStatusToAdmin("🧰 金庫を調べた（鍵が必要）");
+            }
+        } 
+        else if (place === 'poster') {
+            showMessage("壁に掛かった絵画の裏を覗いてみた。<br>『机の鍵 ＝ 金庫の鍵』と手書きで書かれている。");
+            sendStatusToAdmin("🖼️ ポスターを調べた");
+        }
+    }
+
+    setTimeout(() => sendStatusToAdmin("ゲーム開始"), 300);
+</script>
+
+</body>
+</html>
